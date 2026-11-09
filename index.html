@@ -1,0 +1,972 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AudioMultiCut</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --panel: #fff; --ink: #16181d; --muted: #6b7280;
+    --line: #e3e6eb; --line-soft: #eef0f4;
+    --accent: #2f6df6; --accent-soft: #eaf0fe;
+    --danger: #c0392b; --danger-soft: #fdecea;
+    --ok: #1e8e4e; --ok-soft: #e7f6ed;
+    --wave: #9aa6bb; --wave-played: #2f6df6; --marker: #f5871f;
+    --radius: 12px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131519; --panel: #1b1e24; --ink: #e9ecf1; --muted: #98a1af;
+      --line: #2b2f37; --line-soft: #23262c;
+      --accent: #6f9bff; --accent-soft: #22304d;
+      --danger: #ff8a7d; --danger-soft: #3a2320;
+      --ok: #5fd08a; --ok-soft: #1d3327;
+      --wave: #5b6577; --wave-played: #6f9bff; --marker: #ffa94d;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 20px 80px; background: var(--bg); color: var(--ink);
+    font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 21px; margin: 0 0 3px; letter-spacing: -0.02em; }
+  .tagline { color: var(--muted); font-size: 13.5px; margin: 0 0 22px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 14px;
+  }
+  .hidden { display: none !important; }
+  .muted { color: var(--muted); }
+  .small { font-size: 13px; }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .spacer { flex: 1; }
+  .mono { font-variant-numeric: tabular-nums; }
+
+  /* controls */
+  button {
+    font: inherit; cursor: pointer; border-radius: 8px; padding: 7px 13px;
+    border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+  button.primary:hover:not(:disabled) { filter: brightness(1.08); }
+  button.ghost { border: none; background: none; color: var(--accent); padding: 5px 6px; font-size: 13px; }
+  button.ghost.warn { color: var(--danger); }
+  button.tab {
+    border: none; background: none; color: var(--muted); font-weight: 600;
+    padding: 9px 4px; margin-right: 20px; border-bottom: 2px solid transparent;
+    border-radius: 0;
+  }
+  button.tab.on { color: var(--ink); border-bottom-color: var(--accent); }
+  button.chip.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button.icon { padding: 7px 11px; font-variant: normal; }
+  input[type=text], input[type=number], select {
+    font: inherit; color: var(--ink); background: var(--panel);
+    border: 1px solid var(--line); border-radius: 8px; padding: 7px 9px;
+  }
+  input:focus, select:focus { outline: 2px solid var(--accent-soft); border-color: var(--accent); }
+  input[type=number] { width: 96px; font-variant-numeric: tabular-nums; }
+  label.toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+  label.toggle input { accent-color: var(--accent); width: 15px; height: 15px; }
+  label.field { display: block; font-weight: 600; font-size: 12.5px; margin-bottom: 6px; }
+
+  /* drop zone */
+  #drop {
+    border: 2px dashed var(--line); border-radius: var(--radius); background: var(--panel);
+    padding: 52px 20px; text-align: center; cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #drop:hover, #drop.over { border-color: var(--accent); background: var(--accent-soft); }
+  #drop .big { font-size: 16px; font-weight: 600; margin-bottom: 5px; }
+
+  /* file header */
+  #fileBar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  #fileBar .name { font-weight: 600; }
+  #fileBar .facts { color: var(--muted); font-size: 13px; }
+
+  /* waveform */
+  #waveWrap { position: relative; margin: 4px 0 12px; }
+  #wave { display: block; width: 100%; height: 128px; cursor: crosshair;
+          border-radius: 8px; background: var(--line-soft); touch-action: none; }
+  .transport { gap: 10px; }
+  .time { font-size: 13px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .time b { color: var(--ink); font-weight: 600; }
+
+  /* tabs */
+  .tabbar { border-bottom: 1px solid var(--line); margin: 0 0 16px; }
+  .tabhint { color: var(--muted); font-size: 13px; margin: 0 0 12px; }
+
+  /* segment cards */
+  .seg { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-bottom: 10px; }
+  .seg.active { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .seg .head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .seg .idx { color: var(--muted); font-size: 12.5px; font-weight: 600; min-width: 76px; }
+  .seg .nm { flex: 1; min-width: 140px; }
+  .badge {
+    background: var(--line-soft); color: var(--muted); border-radius: 99px;
+    padding: 3px 10px; font-size: 12.5px; font-variant-numeric: tabular-nums;
+  }
+  .seg .times { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 10px; }
+  .seg .times > div { flex: 1; min-width: 130px; }
+
+  /* progress + banners */
+  .bar { height: 8px; background: var(--line); border-radius: 99px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+  .banner { border-radius: 9px; padding: 12px 14px; font-size: 14px; margin-bottom: 14px; }
+  .banner.err { background: var(--danger-soft); color: var(--danger); }
+  .banner.ok { background: var(--ok-soft); color: var(--ok); }
+  .banner pre { margin: 8px 0 0; white-space: pre-wrap; font-size: 12px; opacity: .85; max-height: 130px; overflow: auto; }
+  .sticky {
+    position: sticky; bottom: 0; background: var(--panel); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 14px 18px; margin-top: 16px;
+    box-shadow: 0 -6px 20px rgba(0,0,0,.06);
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>AudioMultiCut</h1>
+  <p class="tagline">Cut multiple audio segments at once — for lectures, rehearsals, lessons &amp; shows.</p>
+
+  <div id="error" class="banner err hidden"></div>
+  <div id="notice" class="banner ok hidden"></div>
+
+  <!-- choose a file -->
+  <div id="drop">
+    <div class="big">Drop an audio file here</div>
+    <div class="small muted">or click to browse — m4a, mp3, wav, aac, flac, ogg, opus</div>
+    <input id="picker" type="file" class="hidden"
+           accept=".m4a,.mp3,.wav,.aac,.flac,.ogg,.opus,.m4b,.mp4">
+  </div>
+
+  <div id="pathBox" class="panel hidden">
+    <label class="field" for="pathInput">Where is that file?</label>
+    <p class="small muted" style="margin:-2px 0 10px;">
+      Couldn't find it automatically. Drag the file into the box below, or right-click it
+      in Finder, hold Option, and choose “Copy as Pathname”.
+    </p>
+    <input id="pathInput" type="text" style="width:100%" placeholder="/Users/you/Desktop/Tank 2.m4a">
+    <button id="pathGo" class="primary" style="margin-top:10px;">Use this file</button>
+  </div>
+
+  <!-- editor -->
+  <div id="editor" class="hidden">
+    <div class="panel">
+      <div id="fileBar">
+        <span class="name" id="fName"></span>
+        <span class="facts" id="fFacts"></span>
+        <span class="spacer"></span>
+        <button class="ghost warn" id="clearSession">Clear session</button>
+      </div>
+
+      <div id="waveWrap">
+        <canvas id="wave"></canvas>
+      </div>
+
+      <div class="row transport">
+        <button class="icon" id="playBtn" title="Play / pause (Space)">▶︎ Play</button>
+        <button class="icon" id="markBtn" title="Drop a marker here (M)">✂︎ Mark</button>
+        <select id="speed" title="Playback speed" style="width:auto;">
+          <option value="0.5">0.5×</option>
+          <option value="0.75">0.75×</option>
+          <option value="1" selected>1.0×</option>
+          <option value="1.25">1.25×</option>
+          <option value="1.5">1.5×</option>
+          <option value="2">2.0×</option>
+        </select>
+        <span class="spacer"></span>
+        <span class="time">Current: <b id="curTime" class="mono">00:00.000</b></span>
+        <span class="time">Duration: <b id="durTime" class="mono">00:00.000</b></span>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <label class="toggle"><input type="checkbox" id="noOverlap" checked> Prevent overlap</label>
+        <label class="toggle"><input type="checkbox" id="hotkeys" checked> Hotkeys</label>
+        <span class="spacer"></span>
+        <span class="small muted" id="cutCount">0 cuts</span>
+      </div>
+    </div>
+
+    <!-- tabs -->
+    <div class="panel">
+      <div class="tabbar row">
+        <button class="tab on" data-tab="manual">Manual</button>
+        <button class="tab" data-tab="auto">Auto-Cut</button>
+        <button class="tab" data-tab="chunks">Chunks</button>
+      </div>
+
+      <div class="tabpane" data-pane="manual">
+        <p class="tabhint">
+          Mark to select what parts to cut. Use manual when you know exactly how much time
+          you want, or when Auto-Cut can't find it.
+        </p>
+        <div class="row">
+          <button id="markHere">✂︎ Mark at playhead</button>
+          <button id="clearMarks">Clear markers</button>
+          <span class="small muted">Press <b>M</b> while listening. Drag a marker on the waveform to move it, drag it above the waveform to delete.</span>
+        </div>
+      </div>
+
+      <div class="tabpane hidden" data-pane="auto">
+        <p class="tabhint">Find the silent gaps and turn everything between them into segments.</p>
+        <div class="row">
+          <span class="small muted">Gaps longer than</span>
+          <input id="minLen" type="number" value="1.5" min="0.2" step="0.1">
+          <span class="small muted">sec, quieter than</span>
+          <input id="noiseDb" type="number" value="-35" max="-5" step="1">
+          <span class="small muted">dB</span>
+          <button id="scanBtn" class="primary">Scan</button>
+        </div>
+        <p class="small muted" id="scanResult" style="margin:10px 0 0;"></p>
+      </div>
+
+      <div class="tabpane hidden" data-pane="chunks">
+        <p class="tabhint">Slice the whole recording into equal parts. The leftover stays as a shorter final part.</p>
+        <div class="row" id="presets">
+          <button class="chip" data-min="15">15 min</button>
+          <button class="chip" data-min="30">30 min</button>
+          <button class="chip" data-min="45">45 min</button>
+          <button class="chip" data-min="50">50 min</button>
+          <button class="chip" data-min="60">60 min</button>
+          <input id="customMin" type="number" min="0.1" step="1" placeholder="Custom">
+          <span class="small muted">min</span>
+        </div>
+        <p class="small muted" id="chunkPreview" style="margin:10px 0 0;"></p>
+      </div>
+    </div>
+
+    <!-- segments -->
+    <div class="panel">
+      <div class="row" style="margin-bottom:12px;">
+        <strong id="segTitle">Fine-Tune Segments (0)</strong>
+        <span class="spacer"></span>
+        <button class="ghost" id="addSeg">+ Add segment</button>
+        <select id="fmt" style="width:auto;">
+          <option value="mp3">MP3 — exact cuts</option>
+          <option value="same">Same as input — faster, ±1s</option>
+        </select>
+      </div>
+      <div id="segList"></div>
+      <p class="small muted" id="segEmpty">
+        No segments yet. Mark some cuts, run Auto-Cut, or pick a chunk length above.
+      </p>
+    </div>
+
+    <div id="progress" class="panel hidden">
+      <div class="small muted" id="stageText" style="margin-bottom:8px;">Working…</div>
+      <div class="bar"><i id="barFill"></i></div>
+    </div>
+
+    <div class="sticky row">
+      <button class="primary" id="cutSave">Cut &amp; save to folder</button>
+      <button id="zipAll">Download all MP3 ZIP</button>
+      <button class="ghost hidden" id="reveal">Show in Finder</button>
+    </div>
+  </div>
+</div>
+
+<audio id="player" preload="metadata"></audio>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const player = $('player');
+const canvas = $('wave');
+const ctx = canvas.getContext('2d');
+const STORE = 'audiomulticut.session';
+
+let file = null;         // {path, name, stem, duration, sample_rate, channels}
+let peaks = [];          // [[min,max], ...]
+let markers = [];        // manual cut points, seconds
+let segments = [];       // [{name, start, end}]
+let gaps = [];           // detected silence, drawn on the waveform
+let activeSeg = -1;      // segment currently being previewed
+let stopAt = null;       // pause playback at this time (segment preview)
+let chunkMin = 0;
+let tab = 'manual';
+let lastOutDir = null;
+let drag = null;         // {kind:'marker'|'edge', ...}
+
+// ---------- formatting ----------
+function clock(s, ms) {
+  s = Math.max(0, s || 0);
+  const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60);
+  const sec = Math.floor(s % 60), frac = Math.round((s % 1) * 1000);
+  const mm = String(m).padStart(2, '0'), ss = String(sec).padStart(2, '0');
+  const base = h ? `${h}:${mm}:${ss}` : `${mm}:${ss}`;
+  return ms ? `${base}.${String(frac).padStart(3, '0')}` : base;
+}
+function shortDur(s) {
+  const m = Math.floor(s / 60), sec = Math.round(s % 60);
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
+// ---------- banners ----------
+function showError(msg, detail) {
+  const box = $('error');
+  box.classList.remove('hidden');
+  box.textContent = msg;
+  if (detail) { const p = document.createElement('pre'); p.textContent = detail; box.append(p); }
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function clearError() { $('error').classList.add('hidden'); $('error').textContent = ''; }
+function showNotice(msg) {
+  $('notice').classList.remove('hidden');
+  $('notice').textContent = msg;
+  setTimeout(() => $('notice').classList.add('hidden'), 6000);
+}
+
+// ---------- fetch helpers ----------
+async function post(url, body) {
+  let r;
+  try {
+    r = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    throw new Error(`Could not connect to the local server. Is trim_audio.py running?\n${err.message}`);
+  }
+  const text = await r.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch (err) {
+    throw new Error(`Unexpected response from ${url} (HTTP ${r.status}).\n${text.slice(0, 300)}`);
+  }
+  if (!r.ok || data.error) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+async function get(url) {
+  let r;
+  try { r = await fetch(url); }
+  catch (err) {
+    throw new Error(`Could not connect to the local server. Is trim_audio.py running?\n${err.message}`);
+  }
+  const text = await r.text();
+  let data;
+  try { data = text ? JSON.parse(text) : {}; }
+  catch (err) {
+    throw new Error(`Unexpected response from ${url} (HTTP ${r.status}).\n${text.slice(0, 300)}`);
+  }
+  if (!r.ok || data.error) throw new Error(data.error || 'Something went wrong.');
+  return data;
+}
+
+// ---------- picking a file ----------
+const drop = $('drop');
+drop.addEventListener('click', () => $('picker').click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files[0]) picked(e.dataTransfer.files[0]);
+});
+$('picker').addEventListener('change', e => { if (e.target.files[0]) picked(e.target.files[0]); });
+
+async function picked(f) {
+  clearError();
+  try {
+    const res = await post('/resolve', { name: f.name, size: f.size });
+    if (res.path) return loadFile(res.path);
+    $('pathBox').classList.remove('hidden');
+    $('pathInput').value = '';
+    $('pathInput').focus();
+  } catch (err) { showError(err.message); }
+}
+$('pathGo').addEventListener('click', () => {
+  const p = $('pathInput').value.trim().replace(/\\ /g, ' ').replace(/^['"]|['"]$/g, '');
+  if (p) loadFile(p);
+});
+$('pathInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('pathGo').click(); });
+
+async function loadFile(path, restore) {
+  clearError();
+  try {
+    file = await post('/probe', { path });
+    $('fName').textContent = file.name;
+    $('fFacts').textContent =
+      `${clock(file.duration)} • ${file.sample_rate}Hz • ${file.channels}ch`;
+    $('durTime').textContent = clock(file.duration, true);
+    $('drop').classList.add('hidden');
+    $('pathBox').classList.add('hidden');
+    $('editor').classList.remove('hidden');
+
+    player.src = '/audio?path=' + encodeURIComponent(file.path);
+    player.playbackRate = parseFloat($('speed').value);
+
+    markers = restore?.markers || [];
+    segments = restore?.segments || [];
+    gaps = [];
+    lastOutDir = null;
+    $('reveal').classList.add('hidden');
+
+    renderSegments();
+    updatePreview();
+    peaks = [];
+    drawWave();
+    peaks = (await get('/peaks?buckets=1600&path=' + encodeURIComponent(file.path))).peaks;
+    drawWave();
+    saveSession();
+  } catch (err) { showError(err.message); }
+}
+
+// ---------- session ----------
+function saveSession() {
+  if (!file) return;
+  try {
+    localStorage.setItem(STORE, JSON.stringify({
+      path: file.path, markers, segments, tab, chunkMin,
+      fmt: $('fmt').value, noOverlap: $('noOverlap').checked,
+    }));
+  } catch (e) { /* private window, or full — not worth interrupting for */ }
+}
+async function restoreSession() {
+  let s = null;
+  try { s = JSON.parse(localStorage.getItem(STORE) || 'null'); } catch (e) { return; }
+  if (!s || !s.path) return;
+  chunkMin = s.chunkMin || 0;
+  $('fmt').value = s.fmt || 'mp3';
+  $('noOverlap').checked = s.noOverlap !== false;
+  await loadFile(s.path, s);
+  if (s.tab) switchTab(s.tab);
+}
+$('clearSession').addEventListener('click', () => {
+  try { localStorage.removeItem(STORE); } catch (e) {}
+  player.pause(); player.removeAttribute('src'); player.load();
+  file = null; peaks = []; markers = []; segments = []; gaps = [];
+  chunkMin = 0; activeSeg = -1; lastOutDir = null;
+  $('picker').value = '';
+  $('editor').classList.add('hidden');
+  $('drop').classList.remove('hidden');
+  $('progress').classList.add('hidden');
+  clearError();
+});
+
+// ---------- waveform ----------
+function sizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  canvas.width = Math.max(1, Math.round(w * dpr));
+  canvas.height = Math.max(1, Math.round(h * dpr));
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  return { w, h };
+}
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function xOf(t, w) { return file && file.duration ? (t / file.duration) * w : 0; }
+function tOf(x, w) { return file && file.duration ? Math.max(0, Math.min((x / w) * file.duration, file.duration)) : 0; }
+
+function drawWave() {
+  const { w, h } = sizeCanvas();
+  const mid = h / 2;
+  ctx.clearRect(0, 0, w, h);
+
+  if (!peaks.length) {
+    ctx.fillStyle = css('--muted');
+    ctx.font = '13px -apple-system, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(file ? 'Reading waveform…' : '', w / 2, mid);
+    return;
+  }
+
+  // silence found by Auto-Cut, behind the wave
+  ctx.fillStyle = css('--line');
+  gaps.forEach(g => {
+    const x1 = xOf(g.start, w), x2 = xOf(g.end, w);
+    ctx.fillRect(x1, 0, Math.max(x2 - x1, 1), h);
+  });
+
+  // segment shading
+  ctx.fillStyle = css('--accent-soft');
+  segments.forEach(s => {
+    const x1 = xOf(s.start, w), x2 = xOf(s.end, w);
+    ctx.fillRect(x1, 0, Math.max(x2 - x1, 1), h);
+  });
+
+  // the wave itself, played portion tinted
+  const playX = xOf(player.currentTime || 0, w);
+  const n = peaks.length;
+  for (let i = 0; i < n; i++) {
+    const x = (i / n) * w;
+    const [lo, hi] = peaks[i];
+    const y1 = mid - hi * (mid - 3), y2 = mid - lo * (mid - 3);
+    ctx.fillStyle = x <= playX ? css('--wave-played') : css('--wave');
+    ctx.fillRect(x, y1, Math.max(w / n, 1), Math.max(y2 - y1, 1));
+  }
+
+  // segment boundaries
+  ctx.strokeStyle = css('--accent');
+  ctx.lineWidth = 1;
+  segments.forEach(s => {
+    [s.start, s.end].forEach(t => {
+      const x = Math.round(xOf(t, w)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    });
+  });
+
+  // manual markers, with a grab handle at the top
+  markers.forEach(t => {
+    const x = Math.round(xOf(t, w)) + 0.5;
+    ctx.strokeStyle = css('--marker'); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, h); ctx.stroke();
+    ctx.fillStyle = css('--marker');
+    ctx.beginPath(); ctx.arc(x, 7, 5, 0, Math.PI * 2); ctx.fill();
+  });
+
+  // playhead
+  ctx.strokeStyle = css('--ink'); ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(playX, 0); ctx.lineTo(playX, h); ctx.stroke();
+}
+window.addEventListener('resize', drawWave);
+
+// waveform interaction: click to seek, drag a marker to move it
+canvas.addEventListener('pointerdown', e => {
+  if (!file) return;
+  const rect = canvas.getBoundingClientRect();
+  const x = e.clientX - rect.left, w = rect.width;
+  const t = tOf(x, w);
+  const near = markers.findIndex(m => Math.abs(xOf(m, w) - x) < 6);
+  if (near >= 0) {
+    drag = { index: near };
+    canvas.setPointerCapture(e.pointerId);
+  } else {
+    seek(t);
+  }
+});
+canvas.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const rect = canvas.getBoundingClientRect();
+  markers[drag.index] = tOf(e.clientX - rect.left, rect.width);
+  drag.outside = e.clientY < rect.top - 6;
+  rebuildFromMarkers(true);
+});
+canvas.addEventListener('pointerup', e => {
+  if (!drag) return;
+  if (drag.outside) markers.splice(drag.index, 1);
+  markers.sort((a, b) => a - b);
+  drag = null;
+  rebuildFromMarkers();
+  saveSession();
+});
+
+// ---------- playback ----------
+function seek(t) {
+  if (!file) return;
+  stopAt = null;
+  player.currentTime = Math.max(0, Math.min(t, file.duration - 0.01));
+  $('curTime').textContent = clock(player.currentTime, true);
+  drawWave();
+}
+$('playBtn').addEventListener('click', togglePlay);
+function togglePlay() {
+  if (!file) return;
+  if (player.paused) player.play().catch(err => showError('Could not play this file: ' + err.message));
+  else player.pause();
+}
+player.addEventListener('play', () => { $('playBtn').textContent = '❚❚ Pause'; });
+player.addEventListener('pause', () => { $('playBtn').textContent = '▶︎ Play'; });
+player.addEventListener('timeupdate', () => {
+  $('curTime').textContent = clock(player.currentTime, true);
+  if (activeSeg >= 0 && segments[activeSeg]) {
+    const el = document.querySelector(`.seg[data-i="${activeSeg}"] .segCur`);
+    if (el) el.textContent = clock(Math.max(player.currentTime - segments[activeSeg].start, 0), true);
+  }
+  if (stopAt !== null && player.currentTime >= stopAt) { player.pause(); stopAt = null; }
+  drawWave();
+});
+player.addEventListener('error', () => {
+  if (player.getAttribute('src')) {
+    showError("This browser can't play that audio format directly. "
+            + 'Cutting still works — only the preview player is affected.');
+  }
+});
+$('speed').addEventListener('change', () => { player.playbackRate = parseFloat($('speed').value); });
+
+document.addEventListener('keydown', e => {
+  if (!file || !$('hotkeys').checked) return;
+  const t = e.target.tagName;
+  if (t === 'INPUT' || t === 'SELECT' || t === 'TEXTAREA') return;
+  if (e.key === ' ') { e.preventDefault(); togglePlay(); }
+  else if (e.key === 'm' || e.key === 'M') { e.preventDefault(); mark(); }
+});
+
+// ---------- markers → segments ----------
+function mark() {
+  if (!file) return;
+  const t = player.currentTime;
+  if (markers.some(m => Math.abs(m - t) < 0.05)) return;
+  markers.push(t);
+  markers.sort((a, b) => a - b);
+  switchTab('manual');
+  rebuildFromMarkers();
+  saveSession();
+}
+$('markBtn').addEventListener('click', mark);
+$('markHere').addEventListener('click', mark);
+$('clearMarks').addEventListener('click', () => {
+  markers = []; rebuildFromMarkers(); saveSession();
+});
+
+function rebuildFromMarkers(inPlace) {
+  const pts = [0, ...markers.filter(m => m > 0.01 && m < file.duration - 0.01), file.duration];
+  const next = [];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const old = segments[i];
+    next.push({
+      name: old?.name || `${file.stem} - chunk ${i + 1}`,
+      start: +pts[i].toFixed(3), end: +pts[i + 1].toFixed(3),
+    });
+  }
+  const sameCount = next.length === segments.length;
+  segments = next;
+  if (inPlace && sameCount) syncCards();
+  else renderSegments();
+}
+
+// ---------- tabs ----------
+document.querySelectorAll('.tab').forEach(b =>
+  b.addEventListener('click', () => switchTab(b.dataset.tab)));
+function switchTab(name) {
+  tab = name;
+  document.querySelectorAll('.tab').forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  document.querySelectorAll('.tabpane').forEach(p => p.classList.toggle('hidden', p.dataset.pane !== name));
+  saveSession();
+}
+
+function confirmReplace() {
+  return !segments.length ||
+    confirm(`This replaces the ${segments.length} segment(s) you have now. Continue?`);
+}
+
+// ---------- auto-cut ----------
+$('scanBtn').addEventListener('click', async () => {
+  if (!confirmReplace()) return;
+  clearError();
+  $('scanBtn').disabled = true; $('scanBtn').textContent = 'Scanning…';
+  try {
+    const res = await post('/silence', {
+      path: file.path,
+      min_len: parseFloat($('minLen').value) || 1.5,
+      noise_db: parseFloat($('noiseDb').value) || -35,
+    });
+    gaps = res.regions;
+    segments = res.speech.map((s, i) => ({
+      name: `${file.stem} - chunk ${i + 1}`, start: s.start, end: s.end,
+    }));
+    markers = segments.slice(1).map(s => s.start);
+    $('scanResult').textContent = gaps.length
+      ? `Found ${gaps.length} gap${gaps.length > 1 ? 's' : ''} → ${segments.length} segment${segments.length > 1 ? 's' : ''}.`
+      : 'No silence found at that threshold — try a shorter gap or a higher dB value.';
+    renderSegments();
+    saveSession();
+  } catch (err) { showError(err.message); }
+  finally { $('scanBtn').disabled = false; $('scanBtn').textContent = 'Scan'; }
+});
+
+// ---------- chunks ----------
+document.querySelectorAll('#presets .chip').forEach(btn =>
+  btn.addEventListener('click', () => { $('customMin').value = ''; applyChunks(parseFloat(btn.dataset.min), true); }));
+$('customMin').addEventListener('change', () => {
+  const v = parseFloat($('customMin').value);
+  if (v > 0) applyChunks(v);
+});
+
+function applyChunks(min, force) {
+  if (!file) return;
+  // A number field fires `change` again when it loses focus. Without this the
+  // blur would silently regenerate the segments and throw away hand edits.
+  if (!force && min === chunkMin && segments.length) return;
+  if (!confirmReplace()) return;
+  chunkMin = min;
+  const size = min * 60;
+  const n = Math.max(Math.ceil(file.duration / size), 1);
+  segments = [];
+  for (let i = 0; i < n; i++) {
+    segments.push({
+      name: `${file.stem} - chunk ${i + 1}`,
+      start: +(i * size).toFixed(3),
+      end: +Math.min((i + 1) * size, file.duration).toFixed(3),
+    });
+  }
+  markers = segments.slice(1).map(s => s.start);
+  gaps = [];
+  renderSegments();
+  updatePreview();
+  saveSession();
+}
+function updatePreview() {
+  document.querySelectorAll('#presets .chip').forEach(b =>
+    b.classList.toggle('on', parseFloat(b.dataset.min) === chunkMin));
+  if (!file || !chunkMin) { $('chunkPreview').textContent = ''; return; }
+  const n = Math.max(Math.ceil(file.duration / (chunkMin * 60)), 1);
+  const last = file.duration - (n - 1) * chunkMin * 60;
+  $('chunkPreview').textContent =
+    `${n} part${n > 1 ? 's' : ''}` + (n > 1 ? ` — last one ${shortDur(last)}` : '');
+}
+
+// ---------- segment list ----------
+$('addSeg').addEventListener('click', () => {
+  const start = segments.length ? segments[segments.length - 1].end : 0;
+  if (start >= file.duration - 0.05) {
+    showError('There is no room left at the end of the recording for another segment.');
+    return;
+  }
+  segments.push({
+    name: `${file.stem} - chunk ${segments.length + 1}`,
+    start, end: file.duration,
+  });
+  renderSegments();
+  saveSession();
+});
+
+function renderSegments() {
+  const list = $('segList');
+  list.innerHTML = '';
+  $('segTitle').textContent = `Fine-Tune Segments (${segments.length})`;
+  $('cutCount').textContent = `${segments.length} cut${segments.length === 1 ? '' : 's'}`;
+  $('segEmpty').classList.toggle('hidden', segments.length > 0);
+  $('cutSave').disabled = $('zipAll').disabled = segments.length === 0;
+
+  segments.forEach((seg, i) => list.append(segCard(seg, i)));
+  updatePreview();
+  drawWave();
+}
+
+// Updating the cards in place matters: a full re-render while you are typing
+// in a Start/End field destroys the input under the cursor.
+function syncCards() {
+  segments.forEach((seg, i) => {
+    const card = document.querySelector(`.seg[data-i="${i}"]`);
+    if (!card) return;
+    const nums = card.querySelectorAll('input[type=number]');
+    [seg.start, seg.end].forEach((v, k) => {
+      if (nums[k] && document.activeElement !== nums[k]) nums[k].value = v.toFixed(3);
+    });
+    card.querySelector('.badge').textContent = shortDur(seg.end - seg.start);
+    card.classList.toggle('active', i === activeSeg);
+  });
+  drawWave();
+}
+
+function segCard(seg, i) {
+  const card = document.createElement('div');
+  card.className = 'seg' + (i === activeSeg ? ' active' : '');
+  card.dataset.i = i;
+
+  const head = document.createElement('div');
+  head.className = 'head';
+  const idx = document.createElement('span');
+  idx.className = 'idx'; idx.textContent = `Segment ${i + 1}`;
+  const name = document.createElement('input');
+  name.type = 'text'; name.className = 'nm'; name.value = seg.name;
+  name.addEventListener('input', () => { seg.name = name.value; });
+  name.addEventListener('change', saveSession);
+  const badge = document.createElement('span');
+  badge.className = 'badge'; badge.textContent = shortDur(seg.end - seg.start);
+  head.append(idx, name, badge);
+
+  const controls = document.createElement('div');
+  controls.className = 'row';
+  const cur = document.createElement('span');
+  cur.className = 'small muted mono segCur'; cur.textContent = '00:00.000';
+  controls.append(mkBtn('Full', () => playRange(i, seg.start, seg.end)));
+  controls.append(mkBtn('Play the end', () => playRange(i, Math.max(seg.end - 5, seg.start), seg.end)));
+  controls.append(mkBtn('Download', () => downloadOne(i), 'ghost'));
+  controls.append(mkBtn('Delete', () => { segments.splice(i, 1); renderSegments(); saveSession(); }, 'ghost warn'));
+  const sp = document.createElement('span'); sp.className = 'spacer';
+  controls.append(sp, document.createTextNode(''), cur);
+
+  const times = document.createElement('div');
+  times.className = 'times';
+  times.append(numField('Start', seg.start, v => setEdge(i, 'start', v)));
+  times.append(numField('End', seg.end, v => setEdge(i, 'end', v)));
+
+  card.append(head, controls, times);
+  return card;
+}
+function mkBtn(label, fn, cls) {
+  const b = document.createElement('button');
+  b.textContent = label;
+  if (cls) b.className = cls;
+  b.addEventListener('click', fn);
+  return b;
+}
+function numField(label, value, onChange) {
+  const wrap = document.createElement('div');
+  const l = document.createElement('label');
+  l.className = 'field'; l.textContent = `${label} (sec)`;
+  const inp = document.createElement('input');
+  inp.type = 'number'; inp.step = '0.001'; inp.min = '0';
+  inp.value = value.toFixed(3);
+  inp.style.width = '100%';
+  inp.addEventListener('change', () => onChange(parseFloat(inp.value)));
+  wrap.append(l, inp);
+  return wrap;
+}
+
+function setEdge(i, which, value) {
+  const seg = segments[i];
+  if (!isFinite(value)) { renderSegments(); return; }
+  let v = Math.max(0, Math.min(value, file.duration));
+
+  const prev = segments[i - 1], next = segments[i + 1];
+  // With Prevent overlap on, segments that touch share a boundary: moving one
+  // side carries the neighbour with it, instead of refusing to move. With it
+  // off, every edge moves freely and segments may overlap.
+  const linked = $('noOverlap').checked;
+  const sharedPrev = linked && prev && Math.abs(prev.end - seg.start) < 0.002;
+  const sharedNext = linked && next && Math.abs(next.start - seg.end) < 0.002;
+
+  if (which === 'start') {
+    const floor = sharedPrev ? prev.start + 0.01 : (linked && prev ? prev.end : 0);
+    v = Math.max(floor, Math.min(v, seg.end - 0.01));
+    if (sharedPrev) prev.end = +v.toFixed(3);
+  } else {
+    const ceil = sharedNext ? next.end - 0.01 : (linked && next ? next.start : file.duration);
+    v = Math.min(ceil, Math.max(v, seg.start + 0.01));
+    if (sharedNext) next.start = +v.toFixed(3);
+  }
+
+  seg[which] = +v.toFixed(3);
+  markers = segments.slice(1).map(s => s.start);
+  syncCards();
+  saveSession();
+}
+
+function playRange(i, from, to) {
+  activeSeg = i;
+  stopAt = to;
+  player.currentTime = from;
+  player.play().catch(err => showError('Could not play this file: ' + err.message));
+  syncCards();
+}
+
+// ---------- cutting ----------
+async function runCut(fmt) {
+  clearError();
+  $('progress').classList.remove('hidden');
+  $('barFill').style.width = '0%';
+  $('stageText').textContent = 'Starting…';
+  $('cutSave').disabled = $('zipAll').disabled = true;
+
+  try {
+    const res = await fetch('/cut', {
+      method: 'POST',
+      body: JSON.stringify({ path: file.path, format: fmt, segments }),
+    });
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}));
+      throw new Error(d.error || `Server returned ${res.status}`);
+    }
+    const reader = res.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '', done = null;
+    while (true) {
+      const { value, done: fin } = await reader.read();
+      if (fin) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const msg = JSON.parse(line);
+        if (msg.error) throw new Error(msg.error);
+        if (msg.progress !== undefined) {
+          $('barFill').style.width = (msg.progress * 100).toFixed(1) + '%';
+          $('stageText').textContent = msg.name
+            ? `Cutting ${msg.index + 1} of ${msg.total} — ${msg.name}`
+            : 'Cutting…';
+        }
+        if (msg.done) done = msg;
+      }
+    }
+    if (!done) throw new Error('The cut ended before it finished.');
+    return done;
+  } finally {
+    $('progress').classList.add('hidden');
+    $('cutSave').disabled = $('zipAll').disabled = segments.length === 0;
+  }
+}
+
+$('cutSave').addEventListener('click', async () => {
+  try {
+    const done = await runCut($('fmt').value);
+    lastOutDir = done.dir;
+    $('reveal').classList.remove('hidden');
+    showNotice(`Saved ${done.files.length} segment${done.files.length > 1 ? 's' : ''} to ${done.dir}`);
+  } catch (err) {
+    const [first, ...rest] = err.message.split('\n');
+    showError(first, rest.join('\n').trim() || null);
+  }
+});
+
+$('zipAll').addEventListener('click', async () => {
+  try {
+    const done = await runCut('mp3');
+    lastOutDir = done.dir;
+    $('reveal').classList.remove('hidden');
+    await downloadZip(done);
+  } catch (err) {
+    const [first, ...rest] = err.message.split('\n');
+    showError(first, rest.join('\n').trim() || null);
+  }
+});
+
+// Zip only what this run produced: the folder may still hold older cuts.
+async function downloadZip(done) {
+  const res = await fetch('/zip', {
+    method: 'POST',
+    body: JSON.stringify({ files: done.files.map(f => f.path), name: done.dir.split('/').pop() }),
+  });
+  if (!res.ok) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error(d.error || `Server returned ${res.status}`);
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (done.dir.split('/').pop() || 'segments') + '.zip';
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+async function downloadOne(i) {
+  clearError();
+  const seg = segments[i];
+  try {
+    $('stageText').textContent = `Cutting ${seg.name}…`;
+    $('progress').classList.remove('hidden');
+    const res = await fetch('/cut', {
+      method: 'POST',
+      body: JSON.stringify({ path: file.path, format: $('fmt').value, segments: [seg] }),
+    });
+    const text = await res.text();
+    const msgs = text.trim().split('\n').filter(Boolean).map(JSON.parse);
+    const err = msgs.find(m => m.error);
+    if (err) throw new Error(err.error);
+    const done = msgs.find(m => m.done);
+    if (!done) throw new Error('The cut ended before it finished.');
+    lastOutDir = done.dir;
+    $('reveal').classList.remove('hidden');
+    window.location = '/download?path=' + encodeURIComponent(done.files[0].path);
+  } catch (e) {
+    const [first, ...rest] = e.message.split('\n');
+    showError(first, rest.join('\n').trim() || null);
+  } finally {
+    $('progress').classList.add('hidden');
+  }
+}
+
+$('reveal').addEventListener('click', () => {
+  if (lastOutDir) post('/reveal', { path: lastOutDir }).catch(e => showError(e.message));
+});
+$('fmt').addEventListener('change', saveSession);
+$('noOverlap').addEventListener('change', saveSession);
+
+restoreSession();
+</script>
+</body>
+</html>

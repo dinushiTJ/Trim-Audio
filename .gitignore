@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Secrets / local config
+.env
+.env.*
+*.pem
+*.key
+
+# Audio files (personal recordings and trimmed outputs)
+*.m4a
+*.m4b
+*.mp3
+*.wav
+*.aac
+*.flac
+*.ogg
+*.opus
+*.mp4
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*~
